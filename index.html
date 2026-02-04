@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MACRO UNIFIED TERMINAL</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #000000;
+            --panel-bg: #121212;
+            --bb-orange: #ff9f00;
+            --text-main: #e0e0e0;
+            --text-muted: #666666;
+            --border: #333333;
+            --up-color: #2ea043;
+            --down-color: #f85149;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inconsolata', 'Roboto Mono', monospace;
+            margin: 0; padding: 0;
+            height: 100vh;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+            text-transform: uppercase;
+        }
+
+        /* --- Unified Page Switcher --- */
+        #page-switcher {
+            background: #000;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 2px;
+            padding: 5px 15px 0 15px;
+            z-index: 100;
+        }
+        .nav-tab {
+            background: #1a1a1a;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            padding: 6px 20px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .nav-tab:hover { color: var(--bb-orange); }
+        .nav-tab.active {
+            background: var(--bb-orange);
+            color: #000;
+            border-color: var(--bb-orange);
+        }
+
+        /* --- Common Terminal Elements --- */
+        .terminal-page {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+        }
+        .terminal-page.active { display: flex; }
+
+        .terminal-header {
+            background-color: var(--panel-bg);
+            border-bottom: 2px solid var(--bb-orange);
+            padding: 0 15px; height: 48px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .brand-section { display: flex; align-items: center; gap: 10px; }
+        .brand-title { font-size: 16px; font-weight: 700; color: var(--bb-orange); letter-spacing: 1px; }
+        .brand-tag { font-size: 10px; color: #000; background: var(--bb-orange); padding: 2px 6px; font-weight: bold; }
+
+        .controls-wrapper { display: flex; gap: 20px; align-items: center; }
+        .time-controls { display: flex; gap: -1px; }
+        .time-btn {
+            background: #000; border: 1px solid var(--border); color: var(--text-muted);
+            padding: 4px 12px; font-family: inherit; font-size: 11px; font-weight: bold;
+            cursor: pointer; transition: all 0s; margin-right: -1px;
+        }
+        .time-btn:hover { color: var(--bb-orange); border-color: var(--bb-orange); z-index: 1; }
+        .time-btn.active { background-color: var(--bb-orange); color: #000; border-color: var(--bb-orange); z-index: 2; }
+        
+        .reset-btn {
+            background: transparent; color: var(--bb-orange); border: 1px solid var(--bb-orange);
+            padding: 4px 12px; font-size: 11px; cursor: pointer; font-family: inherit; font-weight: bold;
+        }
+        .reset-btn:hover { background: var(--bb-orange); color: #000; }
+
+        .header-right { display: flex; align-items: center; gap: 20px; }
+        .data-meta { font-size: 11px; text-align: right; }
+        .meta-label { color: var(--text-muted); font-size: 9px; margin-right: 5px; }
+        .meta-value { color: var(--bb-orange); font-weight: bold; font-size: 12px; }
+
+        .chart-wrapper { 
+            flex: 1; position: relative; padding: 20px 40px 30px 20px;
+            background: var(--bg-color); cursor: crosshair;
+        }
+
+        .leaderboard-panel {
+            position: absolute; top: 20px; left: 80px; 
+            background: rgba(0, 0, 0, 0.85); border: 1px solid var(--border);
+            padding: 10px; z-index: 15; pointer-events: none;
+            backdrop-filter: blur(4px); min-width: 200px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .lb-title {
+            font-size: 10px; color: var(--text-muted); border-bottom: 1px solid var(--border);
+            padding-bottom: 4px; margin-bottom: 6px; letter-spacing: 1px;
+        }
+        .lb-item { display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 3px; }
+        .lb-left { display: flex; align-items: center; gap: 6px; }
+        .lb-name { font-weight: bold; }
+        .lb-cn-name { color: #ffffff; font-size: 10px; opacity: 0.9; font-family: sans-serif; } 
+        .lb-val { font-family: 'Roboto Mono'; font-weight: bold; }
+        .lb-val.up { color: var(--up-color); }
+        .lb-val.down { color: var(--down-color); }
+
+        .loader-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: #000; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 50;
+        }
+        .loader-text { color: var(--bb-orange); font-size: 14px; animation: blink 0.8s infinite step-end; }
+        @keyframes blink { 50% { opacity: 0; } }
+        .error-msg { color: red; border: 1px solid red; padding: 10px; margin-top: 20px; font-family: monospace; display: none; }
+    </style>
+</head>
+<body>
+
+    <nav id="page-switcher">
+        <div class="nav-tab active" data-page="c7">C7 MACRO</div>
+        <div class="nav-tab" data-page="global">GLOBAL MARKET</div>
+        <div class="nav-tab" data-page="industry">INDUSTRY MARKET</div>
+    </nav>
+
+    <!-- PAGE 1: C7 MACRO -->
+    <div id="c7-terminal" class="terminal-page active">
+        <header class="terminal-header">
+            <div class="brand-section">
+                <div class="brand-tag">C7</div>
+                <div class="brand-title">TERMINAL :: MACRO ENGINE</div>
+            </div>
+            <div class="controls-wrapper">
+                <div class="time-controls">
+                    <button class="time-btn" data-months="12">1Y</button>
+                    <button class="time-btn" data-months="36">3Y</button>
+                    <button class="time-btn" data-months="60">5Y</button>
+                    <button class="time-btn" data-months="120">10Y</button>
+                    <button class="time-btn" data-months="180">15Y</button>
+                    <button class="time-btn active" data-months="MAX">MAX</button>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="data-meta"><span class="meta-label">D-FEED:</span><span class="meta-value range-end">SYNCING...</span></div>
+                <div style="color:var(--up-color); font-size:10px;">● ONLINE</div>
+            </div>
+        </header>
+        <main class="chart-wrapper">
+            <div class="leaderboard-panel">
+                <div class="lb-title">RELATIVE STRENGTH RANK</div>
+                <div class="lb-content"></div>
+            </div>
+            <div class="loader-overlay"><div class="loader-text">> BOOTING CORE SUBSYSTEM_</div><div class="error-msg"></div></div>
+            <canvas class="terminal-chart"></canvas>
+        </main>
+    </div>
+
+    <!-- PAGE 2: GLOBAL MARKET -->
+    <div id="global-terminal" class="terminal-page">
+        <header class="terminal-header">
+            <div class="brand-section">
+                <div class="brand-tag">GLOBAL</div>
+                <div class="brand-title">MARKET TERMINAL</div>
+            </div>
+            <div class="controls-wrapper">
+                <button class="reset-btn" data-months="MAX">[ RESET VIEW ]</button>
+                <div class="time-controls">
+                    <button class="time-btn" data-months="12">1Y</button>
+                    <button class="time-btn" data-months="24">2Y</button>
+                    <button class="time-btn" data-months="36">3Y</button>
+                    <button class="time-btn" data-months="60">5Y</button>
+                    <button class="time-btn" data-months="120">10Y</button>
+                    <button class="time-btn active" data-months="MAX">MAX</button>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="data-meta"><span class="meta-label">LAST UPDATE:</span><span class="meta-value range-end">--/--/--</span></div>
+                <div style="color:var(--bb-orange); font-size:10px;">● CONNECTED</div>
+            </div>
+        </header>
+        <main class="chart-wrapper">
+            <div class="leaderboard-panel">
+                <div class="lb-title">PERFORMANCE RANK</div>
+                <div class="lb-content"></div>
+            </div>
+            <div class="loader-overlay"><div class="loader-text">> ESTABLISHING SECURE CONNECTION_</div><div class="error-msg"></div></div>
+            <canvas class="terminal-chart"></canvas>
+        </main>
+    </div>
+
+    <!-- PAGE 3: INDUSTRY MARKET -->
+    <div id="industry-terminal" class="terminal-page">
+        <header class="terminal-header">
+            <div class="brand-section">
+                <div class="brand-tag">INDUSTRY</div>
+                <div class="brand-title">MARKET TERMINAL</div>
+            </div>
+            <div class="controls-wrapper">
+                <button class="reset-btn" data-months="MAX">[ RESET VIEW ]</button>
+                <div class="time-controls">
+                    <button class="time-btn" data-months="12">1Y</button>
+                    <button class="time-btn" data-months="24">2Y</button>
+                    <button class="time-btn" data-months="36">3Y</button>
+                    <button class="time-btn" data-months="60">5Y</button>
+                    <button class="time-btn" data-months="120">10Y</button>
+                    <button class="time-btn active" data-months="MAX">MAX</button>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="data-meta"><span class="meta-label">LAST UPDATE:</span><span class="meta-value range-end">--/--/--</span></div>
+                <div style="color:var(--bb-orange); font-size:10px;">● CONNECTED</div>
+            </div>
+        </header>
+        <main class="chart-wrapper">
+            <div class="leaderboard-panel">
+                <div class="lb-title">PERFORMANCE RANK</div>
+                <div class="lb-content"></div>
+            </div>
+            <div class="loader-overlay"><div class="loader-text">> ESTABLISHING SECURE CONNECTION_</div><div class="error-msg"></div></div>
+            <canvas class="terminal-chart"></canvas>
+        </main>
+    </div>
+
+    <script>
+        /**
+         * TERMINAL FACTORY: 封装独立的终端逻辑
+         */
+        function createTerminal(containerId, config) {
+            const container = document.getElementById(containerId);
+            const chartCanvas = container.querySelector('.terminal-chart');
+            const lbContent = container.querySelector('.lb-content');
+            const rangeEndEl = container.querySelector('.range-end');
+            const loader = container.querySelector('.loader-overlay');
+            const errorEl = container.querySelector('.error-msg');
+            const timeBtns = container.querySelectorAll('.time-btn, .reset-btn');
+
+            let myChart = null;
+            let globalData = { dates: [], datasets: [], nameMap: {} };
+
+            async function init() {
+                try {
+                    const response = await fetch(config.apiUrl);
+                    const json = await response.json();
+                    if (json.error) throw new Error(json.error);
+                    processData(json);
+                    loader.style.display = 'none';
+                } catch (error) {
+                    console.error(error);
+                    loader.querySelector('.loader-text').style.display = 'none';
+                    errorEl.style.display = 'block';
+                    errorEl.innerText = "FAILURE: " + error.message;
+                }
+            }
+
+            function processData(json) {
+                const { headers, rows, nameMap } = json;
+                globalData.nameMap = nameMap || {};
+                let cleanDates = [], cleanRows = [];
+
+                rows.forEach(row => {
+                    const dateVal = row[0];
+                    if (!dateVal) return;
+                    const dateStr = String(dateVal).substring(0, 10);
+                    if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                        cleanDates.push(dateStr);
+                        cleanRows.push(row);
+                    }
+                });
+
+                if (cleanDates.length > 0) {
+                    const lastRealDate = cleanDates[cleanDates.length - 1];
+                    rangeEndEl.innerText = lastRealDate;
+                    const lastDateObj = new Date(lastRealDate);
+                    for (let i = 1; i <= config.futurePadding; i++) {
+                        const futureDate = new Date(lastDateObj);
+                        futureDate.setDate(lastDateObj.getDate() + i);
+                        cleanDates.push(futureDate.toISOString().split('T')[0]);
+                    }
+                }
+
+                globalData.dates = cleanDates;
+                
+                const datasetsRaw = [];
+                let colorIdx = 0;
+                
+                headers.slice(1).forEach((name, index) => {
+                    if (config.exclude && config.exclude.includes(name)) return;
+                    
+                    // 🌟 核心改进：显式映射映射 Ticker 颜色，否则使用独特备选色
+                    let finalColor;
+                    if (config.colorMap && config.colorMap[name]) {
+                        finalColor = config.colorMap[name];
+                    } else {
+                        finalColor = config.colors[colorIdx % config.colors.length];
+                        colorIdx++;
+                    }
+
+                    datasetsRaw.push({
+                        label: name,
+                        data: cleanDates.map((d, i) => {
+                            if (i < cleanRows.length) {
+                                let val = cleanRows[i][index + 1];
+                                if (config.strictFilter) {
+                                    if (val === "" || val === null || val === undefined) return null;
+                                    val = Number(val);
+                                    if (isNaN(val) || val === 0 || val < -0.9) return null;
+                                }
+                                return (typeof val === 'number' && !isNaN(val)) ? val : null;
+                            }
+                            return null;
+                        }),
+                        borderColor: finalColor,
+                        backgroundColor: finalColor,
+                        borderWidth: 1.2,
+                        pointRadius: 0,
+                        tension: 0,
+                        spanGaps: true
+                    });
+                });
+
+                globalData.datasets = datasetsRaw;
+                updateLeaderboard(calculateRanking(globalData.datasets, 0));
+                renderChart(globalData.dates, globalData.datasets);
+            }
+
+            function renderChart(dates, datasets) {
+                const ctx = chartCanvas.getContext('2d');
+                if (myChart) myChart.destroy();
+
+                const crosshairPlugin = {
+                    id: 'crosshair',
+                    afterDraw: chart => {
+                        if (chart.tooltip?._active?.length) {
+                            const activePoint = chart.tooltip._active[0];
+                            const { ctx, scales: { x: xScale, y: yScale } } = chart;
+                            const xPos = activePoint.element.x;
+                            const yPos = activePoint.element.y;
+                            const val = chart.data.datasets[activePoint.datasetIndex].data[activePoint.index];
+
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.setLineDash([4, 4]);
+                            ctx.moveTo(xPos, yScale.top);
+                            ctx.lineTo(xPos, yScale.bottom);
+                            if (!config.verticalOnly) {
+                                ctx.moveTo(xScale.left, yPos);
+                                ctx.lineTo(xScale.right, yPos);
+                            }
+                            ctx.lineWidth = 1;
+                            ctx.strokeStyle = 'rgba(255, 159, 0, 0.4)';
+                            ctx.stroke();
+
+                            if (val !== null) {
+                                const txt = (val * 100).toFixed(2) + '%';
+                                ctx.font = 'bold 10px Roboto Mono';
+                                const tw = ctx.measureText(txt).width;
+                                ctx.fillStyle = '#ff9f00';
+                                ctx.fillRect(yScale.left - tw - 12, yPos - 10, tw + 8, 20);
+                                ctx.fillStyle = '#000';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText(txt, yScale.left - tw/2 - 8, yPos);
+                            }
+                            ctx.restore();
+                        }
+                    }
+                };
+
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: dates, datasets },
+                    plugins: [crosshairPlugin],
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: 'rgba(10, 10, 10, 0.95)', 
+                                titleColor: '#ff9f00', bodyFont: { family: 'Roboto Mono' },
+                                cornerRadius: 0, padding: 10,
+                                callbacks: {
+                                    label: context => {
+                                        let label = context.dataset.label || '';
+                                        const cnName = globalData.nameMap[label] || '';
+                                        if (cnName) label += ` (${cnName})`;
+                                        label += ': ';
+                                        if (context.parsed.y !== null) label += (context.parsed.y * 100).toFixed(2) + '%';
+                                        return label;
+                                    }
+                                }
+                            },
+                            zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, mode: 'x' } }
+                        },
+                        scales: {
+                            x: { grid: { color: '#111' }, ticks: { color: '#444', font: { family: 'Roboto Mono', size: 9 }, maxTicksLimit: 10 } },
+                            y: { grid: { color: v => v.tick.value === 0 ? '#444' : '#111' }, ticks: { color: '#ff9f00', font: { family: 'Roboto Mono' }, callback: v => (v * 100).toFixed(0) + '%' } }
+                        },
+                        animation: { duration: 0 }
+                    }
+                });
+            }
+
+            function calculateRanking(datasets, start) {
+                return datasets.map(ds => {
+                    const slice = ds.data.slice(start);
+                    let lv = 0;
+                    for (let i = slice.length-1; i >= 0; i--) if (slice[i] !== null) { lv = slice[i]; break; }
+                    return { label: ds.label, value: lv, color: ds.borderColor };
+                }).sort((a, b) => b.value - a.value);
+            }
+
+            function updateLeaderboard(data) {
+                lbContent.innerHTML = data.map(item => {
+                    const cnName = globalData.nameMap[item.label] || '';
+                    return `
+                    <div class="lb-item">
+                        <div class="lb-left">
+                            <span class="lb-name" style="color:${item.color}">${item.label}</span>
+                            ${cnName ? `<span class="lb-cn-name">${cnName}</span>` : ''}
+                        </div>
+                        <span class="lb-val ${item.value >= 0 ? 'up' : 'down'}">${item.value > 0 ? '+' : ''}${(item.value * 100).toFixed(2)}%</span>
+                    </div>`;
+                }).join('');
+            }
+
+            function setTimeRange(months, btn) {
+                if (!globalData.dates.length) return;
+                timeBtns.forEach(b => b.classList.remove('active'));
+                if (btn) btn.classList.add('active');
+                
+                let start = 0;
+                if (months !== 'MAX') {
+                    const realEndIndex = globalData.dates.length - config.futurePadding - 1;
+                    const cutoff = new Date(globalData.dates[realEndIndex]);
+                    cutoff.setMonth(cutoff.getMonth() - months);
+                    start = globalData.dates.findIndex(d => d >= cutoff.toISOString().split('T')[0]);
+                }
+                
+                const slicedDates = globalData.dates.slice(start);
+                const slicedDatasets = globalData.datasets.map(ds => {
+                    const s = ds.data.slice(start);
+                    let bv = null;
+                    for (let v of s) if (v !== null) { bv = v; break; }
+                    return { ...ds, data: s.map(v => v === null ? null : ((1 + v) / (1 + (bv||0))) - 1) };
+                });
+                updateLeaderboard(calculateRanking(slicedDatasets, 0));
+                renderChart(slicedDates, slicedDatasets);
+            }
+
+            // 事件绑定
+            timeBtns.forEach(btn => {
+                btn.onclick = () => {
+                    const m = btn.getAttribute('data-months');
+                    setTimeRange(m === 'MAX' ? 'MAX' : parseInt(m), btn);
+                };
+            });
+
+            init();
+        }
+
+        // --- 全局页面切换逻辑 ---
+        const tabs = document.querySelectorAll('.nav-tab');
+        const pages = document.querySelectorAll('.terminal-page');
+        tabs.forEach(tab => {
+            tab.onclick = () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                pages.forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`${tab.getAttribute('data-page')}-terminal`).classList.add('active');
+            };
+        });
+
+        // --- 实例化三个终端 ---
+        
+        // 1. C7 MACRO
+        createTerminal('c7-terminal', {
+            apiUrl: "https://script.google.com/macros/s/AKfycbyd-AEM08UWG4ktWSyY41DAvYvs0TJsc9XTqTYulVnTMbrnFICCtK-C-pBbk6ytLJ95Nw/exec",
+            colors: ['#FF453A', '#0A84FF', '#FFFFFF', '#8E8E93', '#FF9F0A', '#30D158', '#FFD60A'],
+            futurePadding: 60,
+            verticalOnly: true, // C7 仅保留纵向线
+            strictFilter: false
+        });
+
+        // 2. GLOBAL MARKET
+        createTerminal('global-terminal', {
+            apiUrl: "https://script.google.com/macros/s/AKfycbyIK-DMYRCK-fHYIJ2p0yVzlJ4FQIdPtQ7_SdNbe3_jgLXO2euUi7qzTsshvtvLPye87w/exec",
+            exclude: ['EWG', 'KWEB', 'FLAU'],
+            // 🌟 显式颜色映射 (优先级最高)
+            colorMap: {
+                'VOO': '#ff9f00',
+                'EZU': '#8E8E93',
+                'EWJ': '#3b82f6',
+                'EWY': '#ffffff',
+                'EWT': '#ef4444',
+                'INDA': '#22c55e',
+                'VNM': '#facc15',
+                'EWZ': '#a855f7'
+            },
+            // 🌟 非指定资产使用的独特颜色池 (已剔除上述 8 种颜色，确保无重合)
+            colors: [
+                '#10b981', // Emerald 祖母绿 (MCHI等使用)
+                '#6366f1', // Indigo 靛蓝 (KSA等使用)
+                '#22d3ee', // Cyan 青色
+                '#ec4899', // Pink 粉色
+                '#e11d48', // Rose 玫瑰红
+                '#84cc16', // Lime 柠檬绿
+                '#14b8a6'  // Teal 蓝绿色
+            ],
+            futurePadding: 90,
+            verticalOnly: false,
+            strictFilter: false
+        });
+
+        // 3. INDUSTRY MARKET
+        createTerminal('industry-terminal', {
+            apiUrl: "https://script.google.com/macros/s/AKfycbxp1oCyLmXoLyVGjcdJCb0AfWXxbBm3DeyeQWrsevgpRi57C21xzetYjojM9nbaxm4aKA/exec",
+            colors: ['#22d3ee', '#ef4444', '#ec4899', '#9ca3af', '#f97316', '#3b82f6', '#a855f7', '#ffffff', '#65a30d', '#facc15', '#d97706'],
+            futurePadding: 90,
+            verticalOnly: false,
+            strictFilter: true 
+        });
+
+    </script>
+</body>
+</html>
